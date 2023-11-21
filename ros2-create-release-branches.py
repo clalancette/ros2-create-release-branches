@@ -25,6 +25,36 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# This is a script to do the grunt work of creating source branches for a new distribution.
+# The script assumes a few things:
+#
+# 1. That the user has a GitHub API key with all 'repo' permissions in the keyring.  Further,
+#    that API key must be available as the service name 'github-api-token' with the username 'may-open-prs',
+#    and the token set as the password.  This can be setup by creating a new token in the GitHub UI,
+#    and then running:
+#
+#       keyring set github-api-token may-open-prs
+#
+#   and pasting in the token as the password when prompted.
+#
+# 2. That the user has write access to a bunch of ROS 2 infrastructure.  In particular:
+#    * https://github.com/ros2/ros2
+#    * https://github.com/ros/rosdistro
+#    * https://github.com/ros2-gbp/* (basically all of the release repositories for the core)
+#
+# 3. That a migration from Rolling to the new distribution name has already been run for the *binaries*.
+#    In other words, that https://github.com/ros/rosdistro/blob/master/migration-tools/migrate-rosdistro.py
+#    has already been run, that the <release_name>/distribution.yaml file is available in rosdistro, and that
+#    a "jazzy" stanza exists in the YAML in each of the release repositories.
+#
+# Assuming all of the above is true, this script can be run with:
+#
+#   python3 ros2-create-release-branches.py <releasename>
+#
+# It will then go through and update the ros2.repos file, the distribution.yaml file, and the tracks.yaml
+# file in each release repository and update the appropriate spots with a new branch.  It will also go and
+# create a new source branch for the release in each source repository listed in ros2.repos.
+
 import logging
 import os
 import sys
