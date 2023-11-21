@@ -186,6 +186,10 @@ def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: gi
         branch = gitrepo.create_head(pr_branch_name)
         branch.checkout()
         with open(os.path.join(tmpdirname, release_name, 'distribution.yaml'), 'w') as outfp:
+            outfp.write('%YAML 1.1\n')
+            outfp.write('# ROS distribution file\n')
+            outfp.write('# see REP 143: http://ros.org/reps/rep-0143.html\n')
+            outfp.write('---\n')
             yaml.dump(distribution_yaml, outfp)
         gitrepo.git.add(A=True)
         gitrepo.index.commit(f'Update {release_name} information')
