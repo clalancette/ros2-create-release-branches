@@ -1,3 +1,30 @@
+# Copyright (c) 2023, Open Source Robotics Foundation
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#     * Neither the name of the Willow Garage, Inc. nor the names of its
+#       contributors may be used to endorse or promote products derived from
+#       this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
 import os
 import sys
 import tempfile
@@ -121,7 +148,7 @@ def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.Ma
     gh_repo = gh.get_repo(github_repo_name)
     pull = gh_repo.create_pull(title=f'Update {release_name} devel branch', head=new_branch_name, base='master', body=f'Update {release_name} devel branch')
 
-def update_ros2_repos(ros2_repos: dict, release_name: str, gh: github.MainClass.Github):
+def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass.Github):
     pr_branch_name = f'{release_name}-initial-branches'
 
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -145,14 +172,30 @@ def update_ros2_repos(ros2_repos: dict, release_name: str, gh: github.MainClass.
 
     # Open up a PR to the ROS2_REPOS_URL with the changes we just made to ros2.repos
     ros2_repos_github_repo_name = github_name_from_url(ROS2_REPOS_URL)
-    gh_repo = gh.get_repo(ros2_repos_github_name)
+    gh_repo = gh.get_repo(ros2_repos_github_repo_name)
 
     pull = gh_repo.create_pull(title=f'Update {release_name} source branches', head=pr_branch_name, base=release_name, body=f'Update {release_name} source branches')
 
-def update_distribution_yaml(distribution_yaml: dict, release_name: str, gh: github.MainClass.Github):
-    # TODO(clalancette): implement
+def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: github.MainClass.Github):
+    pr_branch_name = f'{release_name}-update'
+
     with tempfile.TemporaryDirectory() as tmpdirname:
-        pass
+        gitrepo = git.Repo.clone_from(ROSDISTRO_URL, tmpdirname)
+        gitrepo.git.checkout('master')
+
+        branch = gitrepo.create_head(pr_branch_name)
+        branch.checkout()
+        with open(os.path.join(tmpdirname, release_name, 'distribution.yaml'), 'w') as outfp:
+            yaml.dump(distribution_yaml, outfp)
+        gitrepo.git.add(A=True)
+        gitrepo.index.commit(f'Update {release_name} information')
+        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+
+    # Open up a PR to the ROSDISTRO_URL with the changes we just made to distribution.yaml
+    rosdistro_repo_name = github_name_from_url(ROSDISTRO_URL)
+    gh_repo = gh.get_repo(rosdistro_repo_name)
+
+    pull = gh_repo.create_pull(title=f'Update {release_name}', head=pr_branch_name, base='master', body=f'Update {release_name}')
 
 def main():
     if len(sys.argv) != 2:
@@ -201,10 +244,10 @@ def main():
         update_tracks_yaml(ros2_key_to_distro_key[name][1], release_name, gh)
 
     # Open a PR to ros2/ros2 with the changes we just made to ros2.repos
-    #update_ros2_repos(ros2_repos, release_name, gh)
+    ros2_repos_open_pr(ros2_repos, release_name, gh)
 
     # Open up a PR to rosdistro with the changes we just made to the distribution.yaml
-    update_distribution_yaml(distribution_yaml, release_name, gh)
+    distribution_yaml_open_pr(distribution_yaml, release_name, gh)
 
     return 0
 
