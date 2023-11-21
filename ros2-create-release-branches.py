@@ -25,6 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import logging
 import os
 import sys
 import tempfile
@@ -35,6 +36,9 @@ import git
 import github
 import requests
 import yaml
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('ros2-create-release-branches')
 
 #ROS2_REPOS_URL = 'https://github.com/ros2/ros2'
 ROS2_REPOS_URL = 'https://github.com/clalancette/ros2'
@@ -57,6 +61,9 @@ def github_raw_from_url(url: str, filename: str):
 
 def download_ros2_repos():
     ros2_repos_file_url = github_raw_from_url(ROS2_REPOS_URL, '/rolling/ros2.repos')
+
+    logger.info(f'Downloading ros2.repos file from {ros2_repos_file_url}')
+
     response = requests.get(ros2_repos_file_url)
     if not response.ok:
         raise Exception('Failed to fetch %s: %s' % (ros2_repos_file_url, str(response)))
@@ -64,6 +71,9 @@ def download_ros2_repos():
 
 def download_distribution_yaml(release_name: str):
     url = github_raw_from_url(ROSDISTRO_URL, f'/master/{release_name}/distribution.yaml')
+
+    logger.info(f'Downloading distribution.yaml file from {url}')
+
     response = requests.get(url)
     if not response.ok:
         raise Exception('Failed to fetch %s: %s' % (url, str(response)))
@@ -92,7 +102,7 @@ def map_ros2_repos_to_distribution_yaml(ros2_repos: dict, distribution_yaml: dic
 
             if doc_url != source_url:
                 # The URLs were both present, but different.  This shouldn't happen
-                print('Package %s doc URL %s does not match source URL %s, skipping...' % (ros2_name, doc_url, source_url))
+                logger.warning('Package %s doc URL %s does not match source URL %s, skipping...' % (ros2_name, doc_url, source_url))
                 continue
 
             release_url = None
@@ -105,8 +115,9 @@ def map_ros2_repos_to_distribution_yaml(ros2_repos: dict, distribution_yaml: dic
     return ret
 
 def create_source_branch(url: str, release_name: str):
+    logger.info(f'Creating source branch {release_name} from "rolling" on {url}')
+
     with tempfile.TemporaryDirectory() as tmpdirname:
-        print('Cloning %s into %s' % (url, tmpdirname))
         gitrepo = git.Repo.clone_from(url, tmpdirname)
         gitrepo.git.checkout('rolling')
 
@@ -124,8 +135,8 @@ def update_distribution_yaml(distribution_yaml: dict, distro_key_name: str, rele
 
 def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.MainClass.Github):
     new_branch_name = f'{release_name}/update-devel-branch'
+
     with tempfile.TemporaryDirectory() as tmpdirname:
-        print('Cloning %s into %s' % (distro_release_url, tmpdirname))
         gitrepo = git.Repo.clone_from(distro_release_url, tmpdirname)
         gitrepo.git.checkout('master')
 
@@ -146,7 +157,10 @@ def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.Ma
     github_repo_name = github_name_from_url(distro_release_url)
 
     gh_repo = gh.get_repo(github_repo_name)
+
+    # TODO(clalancette): Make the title and body more informative
     pull = gh_repo.create_pull(title=f'Update {release_name} devel branch', head=new_branch_name, base='master', body=f'Update {release_name} devel branch')
+    logger.info(f'Opened PR to update tracks.yaml devel_branch at {pull.html_url}')
 
 def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass.Github):
     pr_branch_name = f'{release_name}-initial-branches'
@@ -174,7 +188,9 @@ def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass
     ros2_repos_github_repo_name = github_name_from_url(ROS2_REPOS_URL)
     gh_repo = gh.get_repo(ros2_repos_github_repo_name)
 
+    # TODO(clalancette): Make the title and body more informative
     pull = gh_repo.create_pull(title=f'Update {release_name} source branches', head=pr_branch_name, base=release_name, body=f'Update {release_name} source branches')
+    logger.info(f'Opened PR to update ros2.repos at {pull.html_url}')
 
 def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: github.MainClass.Github):
     pr_branch_name = f'{release_name}-update'
@@ -197,9 +213,12 @@ def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: gi
 
     # Open up a PR to the ROSDISTRO_URL with the changes we just made to distribution.yaml
     rosdistro_repo_name = github_name_from_url(ROSDISTRO_URL)
+
     gh_repo = gh.get_repo(rosdistro_repo_name)
 
+    # TODO(clalancette): Make the title and body more informative
     pull = gh_repo.create_pull(title=f'Update {release_name}', head=pr_branch_name, base='master', body=f'Update {release_name}')
+    logger.info(f'Opened PR to update distribution.yaml at {pull.html_url}')
 
 def main():
     if len(sys.argv) != 2:
