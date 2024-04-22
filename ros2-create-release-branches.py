@@ -155,7 +155,7 @@ def create_source_branch(url: str, release_name: str, commit: bool):
         gitrepo = git.Repo.clone_from(url, tmpdirname)
         for ref in gitrepo.references:
             if ref.name.removeprefix('origin/') == release_name:
-                logger.info(f'Skipping {url} since remote already contains {release_name} branch')
+                logger.info(f'Skipping creation of source branch at {url} since remote already contains {release_name} branch')
                 return
 
         gitrepo.git.checkout('rolling')
@@ -210,14 +210,18 @@ def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         gitrepo = git.Repo.clone_from(ROS2_REPOS_URL, tmpdirname)
-        gitrepo.git.checkout('rolling')
+        for ref in gitrepo.references:
+            if ref.name.removeprefix('origin/') == release_name:
+                logger.info(f'Skipping; {url} already contains {release_name} branch')
+                break
+        else:
+            gitrepo.git.checkout('rolling')
 
-        # Create a new branch in ROS2_REPOS_URL corresponding to this releases' name
-        # TODO(clalancette): Check if branch already exists
-        releasebranch = gitrepo.create_head(release_name)
-        releasebranch.checkout()
-        if commit:
-            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+            # Create a new branch in ROS2_REPOS_URL corresponding to this releases' name
+            releasebranch = gitrepo.create_head(release_name)
+            releasebranch.checkout()
+            if commit:
+                gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
         # Push a branch with the changes we just made
         branch = gitrepo.create_head(pr_branch_name)
