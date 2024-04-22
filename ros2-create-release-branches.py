@@ -278,7 +278,7 @@ def main():
     # 4.  Update the 'tracks.yaml' file in the individual release repositories that corresponds to the passed-in name.
 
     # These are repositories that we should *not* create new branches for
-    SKIPLIST = ('eProsima/Fast-CDR', 'eProsima/Fast-DDS', 'eProsima/foonathan_memory_vendor', 'eclipse-cyclonedds/cyclonedds', 'eclipse-iceoryx/iceoryx', 'osrf/osrf_pycommon', 'ros/urdfdom', 'ros/urdfdom_headers')
+    SKIPLIST = ('eProsima/Fast-CDR', 'eProsima/Fast-DDS', 'eProsima/foonathan_memory_vendor', 'eclipse-cyclonedds/cyclonedds', 'eclipse-iceoryx/iceoryx', 'osrf/osrf_pycommon', 'ros/urdfdom', 'ros/urdfdom_headers', 'gazebo-release/gz_utils_vendor', 'gazebo-release/gz_math_vendor', 'gazebo-release/gz_cmake_vendor')
 
     for name, repo_info in ros2_repos['repositories'].items():
         if name in SKIPLIST:
