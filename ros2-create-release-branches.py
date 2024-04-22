@@ -153,13 +153,16 @@ def create_source_branch(url: str, release_name: str, commit: bool):
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         gitrepo = git.Repo.clone_from(url, tmpdirname)
+        for ref in gitrepo.references:
+            if ref.name.removeprefix('origin/') == release_name:
+                logger.info(f'Skipping {url} since remote already contains {release_name} branch')
+                return
+
         gitrepo.git.checkout('rolling')
 
         # Create a new branch corresponding to this releases' name
-        # TODO(clalancette): Check if branch already exists
         releasebranch = gitrepo.create_head(release_name)
         releasebranch.checkout()
-        log_message = ''
         if commit:
             gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
