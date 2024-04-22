@@ -55,6 +55,7 @@
 # file in each release repository and update the appropriate spots with a new branch.  It will also go and
 # create a new source branch for the release in each source repository listed in ros2.repos.
 
+import argparse
 import logging
 import os
 import sys
@@ -68,13 +69,13 @@ import requests
 import yaml
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('ros2-create-release-branches')
+logger = logging.getLogger('create-release-branches')
 
-#ROS2_REPOS_URL = 'https://github.com/ros2/ros2'
-ROS2_REPOS_URL = 'https://github.com/clalancette/ros2'
+ROS2_REPOS_URL = 'https://github.com/ros2/ros2'
+#ROS2_REPOS_URL = 'https://github.com/clalancette/ros2'
 
-#ROSDISTRO_URL = 'https://github.com/ros/rosdistro'
-ROSDISTRO_URL = 'https://github.com/clalancette/myrosdistro'
+ROSDISTRO_URL = 'https://github.com/ros/rosdistro'
+#ROSDISTRO_URL = 'https://github.com/clalancette/myrosdistro'
 
 def github_name_from_url(url: str):
     # Given something like https://github.com/ros2/ros2, this will produce 'ros2/ros2'
@@ -130,7 +131,7 @@ def map_ros2_repos_to_distribution_yaml(ros2_repos: dict, distribution_yaml: dic
                 # No match found, continue looking
                 continue
 
-            if doc_url != source_url:
+            if doc_url is not None and source_url is not None and doc_url != source_url:
                 # The URLs were both present, but different.  This shouldn't happen
                 logger.warning('Package %s doc URL %s does not match source URL %s, skipping...' % (ros2_name, doc_url, source_url))
                 continue
@@ -144,8 +145,11 @@ def map_ros2_repos_to_distribution_yaml(ros2_repos: dict, distribution_yaml: dic
 
     return ret
 
-def create_source_branch(url: str, release_name: str):
-    logger.info(f'Creating source branch {release_name} from "rolling" on {url}')
+def create_source_branch(url: str, release_name: str, commit: bool):
+    log_prefix = '(dry-run) '
+    if commit:
+        log_prefix = ''
+    logger.info(log_prefix + f'Creating source branch {release_name} from "rolling" on {url}')
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         gitrepo = git.Repo.clone_from(url, tmpdirname)
@@ -155,7 +159,9 @@ def create_source_branch(url: str, release_name: str):
         # TODO(clalancette): Check if branch already exists
         releasebranch = gitrepo.create_head(release_name)
         releasebranch.checkout()
-        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+        log_message = ''
+        if commit:
+            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
 def update_distribution_yaml(distribution_yaml: dict, distro_key_name: str, release_name: str):
     if 'doc' in distribution_yaml['repositories'][distro_key_name]:
@@ -163,7 +169,7 @@ def update_distribution_yaml(distribution_yaml: dict, distro_key_name: str, rele
     if 'source' in distribution_yaml['repositories'][distro_key_name]:
         distribution_yaml['repositories'][distro_key_name]['source']['version'] = release_name
 
-def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.MainClass.Github):
+def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.MainClass.Github, commit: bool):
     new_branch_name = f'{release_name}/update-devel-branch'
 
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -182,17 +188,21 @@ def update_tracks_yaml(distro_release_url: str, release_name: str, gh: github.Ma
 
         gitrepo.git.add(A=True)
         gitrepo.index.commit(f'Update {release_name} devel branch')
-        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+        if commit:
+            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
     github_repo_name = github_name_from_url(distro_release_url)
 
     gh_repo = gh.get_repo(github_repo_name)
 
-    # TODO(clalancette): Make the title and body more informative
-    pull = gh_repo.create_pull(title=f'Update {release_name} devel branch', head=new_branch_name, base='master', body=f'Update {release_name} devel branch')
-    logger.info(f'Opened PR to update tracks.yaml devel_branch at {pull.html_url}')
+    if commit:
+        # TODO(clalancette): Make the title and body more informative
+        pull = gh_repo.create_pull(title=f'Update {release_name} devel branch', head=new_branch_name, base='master', body=f'Update {release_name} devel branch')
+        logger.info(f'Opened PR to update tracks.yaml devel_branch at {pull.html_url}')
+    else:
+        logger.info(f'(dry-run) Would have opened PR to update tracks.yaml devel_branch for {distro_release_url}')
 
-def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass.Github):
+def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass.Github, commit: bool):
     pr_branch_name = f'{release_name}-initial-branches'
 
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -203,7 +213,8 @@ def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass
         # TODO(clalancette): Check if branch already exists
         releasebranch = gitrepo.create_head(release_name)
         releasebranch.checkout()
-        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+        if commit:
+            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
         # Push a branch with the changes we just made
         branch = gitrepo.create_head(pr_branch_name)
@@ -212,17 +223,21 @@ def ros2_repos_open_pr(ros2_repos: dict, release_name: str, gh: github.MainClass
             yaml.dump(ros2_repos, outfp)
         gitrepo.git.add(A=True)
         gitrepo.index.commit(f'Update {release_name} source branches')
-        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+        if commit:
+            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
     # Open up a PR to the ROS2_REPOS_URL with the changes we just made to ros2.repos
     ros2_repos_github_repo_name = github_name_from_url(ROS2_REPOS_URL)
     gh_repo = gh.get_repo(ros2_repos_github_repo_name)
 
-    # TODO(clalancette): Make the title and body more informative
-    pull = gh_repo.create_pull(title=f'Update {release_name} source branches', head=pr_branch_name, base=release_name, body=f'Update {release_name} source branches')
-    logger.info(f'Opened PR to update ros2.repos at {pull.html_url}')
+    if commit:
+        # TODO(clalancette): Make the title and body more informative
+        pull = gh_repo.create_pull(title=f'Update {release_name} source branches', head=pr_branch_name, base=release_name, body=f'Update {release_name} source branches')
+        logger.info(f'Opened PR to update ros2.repos at {pull.html_url}')
+    else:
+        logger.info(f'(dry-run) Would have created {release_name} branch and opened PR to {ROS2_REPOS_URL}')
 
-def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: github.MainClass.Github):
+def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: github.MainClass.Github, commit: bool):
     pr_branch_name = f'{release_name}-update'
 
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -239,23 +254,26 @@ def distribution_yaml_open_pr(distribution_yaml: dict, release_name: str, gh: gi
             yaml.dump(distribution_yaml, outfp)
         gitrepo.git.add(A=True)
         gitrepo.index.commit(f'Update {release_name} information')
-        gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
+        if commit:
+            gitrepo.git.push('--set-upstream', gitrepo.remote(), gitrepo.head.ref)
 
     # Open up a PR to the ROSDISTRO_URL with the changes we just made to distribution.yaml
     rosdistro_repo_name = github_name_from_url(ROSDISTRO_URL)
 
     gh_repo = gh.get_repo(rosdistro_repo_name)
 
-    # TODO(clalancette): Make the title and body more informative
-    pull = gh_repo.create_pull(title=f'Update {release_name}', head=pr_branch_name, base='master', body=f'Update {release_name}')
-    logger.info(f'Opened PR to update distribution.yaml at {pull.html_url}')
+    if commit:
+        # TODO(clalancette): Make the title and body more informative
+        pull = gh_repo.create_pull(title=f'Update {release_name}', head=pr_branch_name, base='master', body=f'Update {release_name}')
+        logger.info(f'Opened PR to update distribution.yaml at {pull.html_url}')
+    else:
+        logger.info(f'(dry-run) Would have opened PR to update {release_name} at {ROSDISTRO_URL}')
 
 def main():
-    if len(sys.argv) != 2:
-        print('Usage: %s <release-name>' % (sys.argv[0]))
-        return 1
-
-    release_name = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--commit', help='Actually push to remote repositories and open PRs', action='store_true', default=False)
+    parser.add_argument('release_name', nargs=1, help='The release to branch for (will be used as the branch name)', action='store')
+    args = parser.parse_args()
 
     key = keyring.get_password('github-api-token', 'may-open-prs')
     if key is None:
@@ -267,7 +285,7 @@ def main():
     ros2_repos = download_ros2_repos()
 
     # Download the distribution.yaml file corresponding to this release
-    distribution_yaml = download_distribution_yaml(release_name)
+    distribution_yaml = download_distribution_yaml(args.release_name[0])
 
     ros2_key_to_distro_key = map_ros2_repos_to_distribution_yaml(ros2_repos, distribution_yaml)
 
@@ -286,22 +304,22 @@ def main():
             continue
 
         # Step 1
-        create_source_branch(repo_info['url'], release_name)
+        create_source_branch(repo_info['url'], args.release_name[0], args.commit)
 
         # Step 2
-        repo_info['version'] = release_name
+        repo_info['version'] = args.release_name[0]
 
         # Step 3
-        update_distribution_yaml(distribution_yaml, ros2_key_to_distro_key[name][0], release_name)
+        update_distribution_yaml(distribution_yaml, ros2_key_to_distro_key[name][0], args.release_name[0])
 
         # Step 4
-        update_tracks_yaml(ros2_key_to_distro_key[name][1], release_name, gh)
+        update_tracks_yaml(ros2_key_to_distro_key[name][1], args.release_name[0], gh, args.commit)
 
     # Open a PR to ros2/ros2 with the changes we just made to ros2.repos
-    ros2_repos_open_pr(ros2_repos, release_name, gh)
+    ros2_repos_open_pr(ros2_repos, args.release_name[0], gh, args.commit)
 
     # Open up a PR to rosdistro with the changes we just made to the distribution.yaml
-    distribution_yaml_open_pr(distribution_yaml, release_name, gh)
+    distribution_yaml_open_pr(distribution_yaml, args.release_name[0], gh, args.commit)
 
     return 0
 
