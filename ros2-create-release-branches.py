@@ -313,7 +313,10 @@ def main():
         update_distribution_yaml(distribution_yaml, ros2_key_to_distro_key[name][0], args.release_name[0])
 
         # Step 4
-        update_tracks_yaml(ros2_key_to_distro_key[name][1], args.release_name[0], gh, args.commit)
+        if ros2_key_to_distro_key[name][1] is not None:
+            update_tracks_yaml(ros2_key_to_distro_key[name][1], args.release_name[0], gh, args.commit)
+        else:
+            logger.info(f'Skipped updating tracks.yaml for {name} since it has no release repository')
 
     # Open a PR to ros2/ros2 with the changes we just made to ros2.repos
     ros2_repos_open_pr(ros2_repos, args.release_name[0], gh, args.commit)
