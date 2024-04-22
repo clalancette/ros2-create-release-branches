@@ -282,6 +282,7 @@ def main():
 
     for name, repo_info in ros2_repos['repositories'].items():
         if name in SKIPLIST:
+            logger.info(f'Skipping repository {name} in SKIP_LIST')
             continue
 
         # Step 1
